@@ -1,0 +1,5 @@
+streamlit>=1.30
+pandas>=2.0.0
+nsepy>=0.8
+yfinance>=0.2.40
+ta>=0.11.0
