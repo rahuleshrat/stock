@@ -15,7 +15,7 @@ v40_stocks = [
     "DRREDDY","CIPLA","EICHERMOT","HEROMOTOCO","M&M","DIVISLAB","BPCL","SHREECEM","UPL"
 ]
 
-st.title("📈 NSE V40 Stochastic Screener (Daily – Current Only)")
+st.title("📈 NSE V40 Stochastic Screener (Daily – Extended BUY Rule)")
 
 # --- Date Range: last 6 months ---
 start = dt.date.today() - dt.timedelta(days=180)
@@ -54,25 +54,43 @@ for symbol in v40_stocks:
     df["%K"] = stoch.stoch()
     df["%D"] = stoch.stoch_signal()
 
+    # --- Find last setup candle (both K & D < 20) ---
+    setup_close, setup_date = None, None
+    for i in range(len(df)-1, -1, -1):  # loop backwards
+        if df["%K"].iloc[i] < 20 and df["%D"].iloc[i] < 20:
+            setup_close = df["Close"].iloc[i]
+            setup_date = df.index[i]
+            break
+
     # --- Get latest row values ---
     current_k = df["%K"].iloc[-1]
     current_d = df["%D"].iloc[-1]
     current_price = df["Close"].iloc[-1]
 
-    # --- Signal based ONLY on today ---
+    # --- Extended BUY/SELL/HOLD Logic ---
     if current_k < 20 and current_d < 20:
+        # Standard BUY
         signal = "BUY"
         buy_price = round(current_price, 2)
+    elif setup_close is not None and current_price <= setup_close:
+        # Extended BUY: still under setup candle close
+        signal = "BUY"
+        buy_price = round(current_price, 2)
+    elif current_k > 80 and current_d > 80:
+        signal = "SELL"
+        buy_price = None
+    else:
+        signal = "HOLD"
+        buy_price = None
+
+    # --- Populate targets if BUY ---
+    if signal == "BUY" and buy_price:
         target_3 = round(buy_price * 1.03, 2)
         target_5 = round(buy_price * 1.05, 2)
         three_pct_hit = target_3 if current_price >= target_3 else None
         five_pct_hit = target_5 if current_price >= target_5 else None
-    elif current_k > 80 and current_d > 80:
-        signal = "SELL"
-        buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
     else:
-        signal = "HOLD"
-        buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
+        target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None
 
     signals.append([symbol, signal, buy_price, target_3, target_5, three_pct_hit, five_pct_hit])
 
@@ -96,7 +114,7 @@ def highlight_rows(row):
 
 styled_df = signals_df.style.apply(highlight_rows, axis=1)
 
-st.subheader("📊 Screener Summary (Today’s Signal Only)")
+st.subheader("📊 Screener Summary (Today’s Signal Only with Extended BUY Rule)")
 st.dataframe(styled_df, use_container_width=True)
 
 # --- Plotting Section ---
