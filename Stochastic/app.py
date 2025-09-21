@@ -15,7 +15,7 @@ v40_stocks = [
     "DRREDDY","CIPLA","EICHERMOT","HEROMOTOCO","M&M","DIVISLAB","BPCL","SHREECEM","UPL"
 ]
 
-st.title("📈 NSE V40 Stochastic Screener (Daily)")
+st.title("📈 NSE V40 Stochastic Screener (Daily – Current Only)")
 
 # --- Date Range: last 6 months ---
 start = dt.date.today() - dt.timedelta(days=180)
@@ -39,7 +39,7 @@ def fetch_data(symbol):
             return None
     return df
 
-# --- Loop through all V40 and compute signals ---
+# --- Loop through all V40 and compute CURRENT signal only ---
 for symbol in v40_stocks:
     df = fetch_data(symbol)
     if df is None or df.empty:
@@ -54,45 +54,50 @@ for symbol in v40_stocks:
     df["%K"] = stoch.stoch()
     df["%D"] = stoch.stoch_signal()
 
-    # --- Strategy logic ---
-    last_signal = "HOLD"
-    buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
+    # --- Get latest row values ---
+    current_k = df["%K"].iloc[-1]
+    current_d = df["%D"].iloc[-1]
+    current_price = df["Close"].iloc[-1]
 
-    for i in range(1, len(df)):
-        k, d = df["%K"].iloc[i], df["%D"].iloc[i]
-        prev_k, prev_d = df["%K"].iloc[i-1], df["%D"].iloc[i-1]
-        close_price = df["Close"].iloc[i]
+    # --- Signal based ONLY on today ---
+    if current_k < 20 and current_d < 20:
+        signal = "BUY"
+        buy_price = round(current_price, 2)
+        target_3 = round(buy_price * 1.03, 2)
+        target_5 = round(buy_price * 1.05, 2)
+        three_pct_hit = target_3 if current_price >= target_3 else None
+        five_pct_hit = target_5 if current_price >= target_5 else None
+    elif current_k > 80 and current_d > 80:
+        signal = "SELL"
+        buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
+    else:
+        signal = "HOLD"
+        buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
 
-        # BUY condition
-        if k < 20 and d < 20 and (prev_k >= 20 or prev_d >= 20):
-            last_signal = "BUY"
-            buy_price = close_price
-            target_3, target_5 = buy_price * 1.03, buy_price * 1.05
-            three_pct_hit, five_pct_hit = None, None
+    signals.append([symbol, signal, buy_price, target_3, target_5, three_pct_hit, five_pct_hit])
 
-        # SELL condition
-        elif k > 80 and d > 80 and (prev_k <= 80 or prev_d <= 80):
-            last_signal = "SELL"
-            buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
-
-        # Check targets if in trade
-        if buy_price:
-            if not three_pct_hit and close_price >= target_3:
-                three_pct_hit = target_3
-            if not five_pct_hit and close_price >= target_5:
-                five_pct_hit = target_5
-                last_signal = "SELL"
-                buy_price, target_3, target_5, three_pct_hit, five_pct_hit = None, None, None, None, None
-
-    signals.append([symbol, last_signal, buy_price, target_3, target_5, three_pct_hit, five_pct_hit])
-
-# --- Summary Table ---
+# --- Summary Table with Color Coding ---
 signals_df = pd.DataFrame(
     signals,
     columns=["Stock","Signal","Buy Price","Target 3%","Target 5%","3% Hit","5% Hit"]
 )
-st.subheader("📊 Screener Summary")
-st.dataframe(signals_df)
+
+def highlight_rows(row):
+    if row["Signal"] == "BUY":
+        return ['background-color: lightgreen'] * len(row)
+    elif row["Signal"] == "SELL":
+        return ['background-color: salmon'] * len(row)
+    elif row["Signal"] == "HOLD":
+        return ['background-color: lightyellow'] * len(row)
+    elif row["Signal"] == "NO DATA":
+        return ['background-color: lightgrey'] * len(row)
+    else:
+        return [''] * len(row)
+
+styled_df = signals_df.style.apply(highlight_rows, axis=1)
+
+st.subheader("📊 Screener Summary (Today’s Signal Only)")
+st.dataframe(styled_df, use_container_width=True)
 
 # --- Plotting Section ---
 st.subheader("📈 Stochastic & Price Charts with Signals")
@@ -107,9 +112,8 @@ if df is not None and not df.empty:
     df["%K"] = stoch.stoch()
     df["%D"] = stoch.stoch_signal()
 
-    # --- Find buy/sell points ---
+    # --- Find buy/sell points in history ---
     buy_points, sell_points = [], []
-
     for i in range(1, len(df)):
         k, d = df["%K"].iloc[i], df["%D"].iloc[i]
         prev_k, prev_d = df["%K"].iloc[i-1], df["%D"].iloc[i-1]
@@ -128,7 +132,6 @@ if df is not None and not df.empty:
     ax.axhline(20, color="green", linestyle="--", alpha=0.7)
     ax.axhline(80, color="red", linestyle="--", alpha=0.7)
 
-    # Add markers
     for date, k_val, price in buy_points:
         ax.scatter(date, k_val, marker="^", color="green", s=100)
         ax.text(date, k_val+2, f"{price:.1f}", color="green", fontsize=8)
@@ -141,7 +144,7 @@ if df is not None and not df.empty:
     ax.legend()
     st.pyplot(fig)
 
-    # --- Plot Price Chart with signals ---
+    # --- Plot Price Chart ---
     fig2, ax2 = plt.subplots(figsize=(10,5))
     ax2.plot(df.index, df["Close"], label="Close Price", color="black")
 
